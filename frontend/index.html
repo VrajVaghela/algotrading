@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlgoTrader | Backtesting Dashboard</title>
+    <meta name="description"
+        content="Professional algorithmic trading backtester with real-time analytics and performance metrics">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-brand">
+                <div class="logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 3v18h18" />
+                        <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
+                    </svg>
+                </div>
+                <h1>AlgoTrader</h1>
+                <span class="badge">Backtester</span>
+            </div>
+            <div class="header-stats" id="headerStats">
+                <div class="header-stat">
+                    <span class="label">Status</span>
+                    <span class="value ready">Ready</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Controls Panel -->
+            <aside class="controls-panel">
+                <div class="panel-header">
+                    <h2>Strategy Configuration</h2>
+                </div>
+
+                <form id="backtestForm" class="controls-form">
+                    <!-- Data Source -->
+                    <div class="form-section">
+                        <h3>Data Source</h3>
+                        <div class="form-group">
+                            <label for="csvUpload" class="file-upload-label">
+                                <span id="fileName">Select CSV File</span>
+                                <input type="file" id="csvUpload" accept=".csv" style="display: none;">
+                            </label>
+                            <button type="button" class="btn-secondary" id="uploadBtn" disabled>
+                                Upload Data
+                            </button>
+                            <div id="uploadStatus" class="status-text">Using: Default Data</div>
+                        </div>
+                    </div>
+
+                    <!-- Strategy Selection -->
+                    <div class="form-group">
+                        <label for="strategy">Strategy</label>
+                        <select id="strategy" name="strategy">
+                            <option value="ma_rsi">MA Crossover + RSI</option>
+                            <option value="ma_crossover">MA Crossover</option>
+                            <option value="rsi">RSI</option>
+                            <option value="bollinger">Bollinger Bands</option>
+                        </select>
+                    </div>
+
+                    <!-- Moving Average Settings -->
+                    <div class="form-section">
+                        <h3>Moving Averages</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="fastPeriod">Fast Period</label>
+                                <input type="number" id="fastPeriod" name="fast_period" value="10" min="2" max="100">
+                            </div>
+                            <div class="form-group">
+                                <label for="slowPeriod">Slow Period</label>
+                                <input type="number" id="slowPeriod" name="slow_period" value="50" min="5" max="200">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RSI Settings -->
+                    <div class="form-section">
+                        <h3>RSI</h3>
+                        <div class="form-group">
+                            <label for="rsiPeriod">Period</label>
+                            <input type="range" id="rsiPeriod" name="rsi_period" value="14" min="5" max="30">
+                            <span class="range-value" id="rsiPeriodValue">14</span>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="rsiOversold">Oversold</label>
+                                <input type="number" id="rsiOversold" name="rsi_oversold" value="30" min="10" max="40">
+                            </div>
+                            <div class="form-group">
+                                <label for="rsiOverbought">Overbought</label>
+                                <input type="number" id="rsiOverbought" name="rsi_overbought" value="70" min="60"
+                                    max="90">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Capital Settings -->
+                    <div class="form-section">
+                        <h3>Capital & Costs</h3>
+                        <div class="form-group">
+                            <label for="initialCapital">Initial Capital (₹)</label>
+                            <input type="number" id="initialCapital" name="initial_capital" value="100000" min="10000"
+                                step="10000">
+                        </div>
+                        <div class="form-group">
+                            <label for="commission">Commission (%)</label>
+                            <input type="number" id="commission" name="commission" value="0.1" min="0" max="1"
+                                step="0.01">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-primary" id="runBtn">
+                        <span class="btn-text">Run Backtest</span>
+                        <span class="btn-loader"></span>
+                    </button>
+                </form>
+            </aside>
+
+            <!-- Results Area -->
+            <section class="results-area">
+                <!-- Loading State -->
+                <div class="loading-overlay" id="loadingOverlay">
+                    <div class="loader-ring"></div>
+                    <p>Running backtest...</p>
+                </div>
+
+                <!-- Metrics Cards -->
+                <div class="metrics-grid">
+                    <div class="metric-card highlight">
+                        <div class="metric-icon return-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+                            </svg>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">Total Return</span>
+                            <span class="metric-value" id="totalReturn">--</span>
+                            <span class="metric-sub" id="totalReturnPct">--</span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon sharpe-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M12 6v6l4 2" />
+                            </svg>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">Sharpe Ratio</span>
+                            <span class="metric-value" id="sharpeRatio">--</span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon drawdown-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 3v18h18" />
+                                <path d="M7 14l4-4 4 4 5-5" />
+                            </svg>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">Max Drawdown</span>
+                            <span class="metric-value" id="maxDrawdown">--</span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon winrate-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+                                <path d="M22 4L12 14.01l-3-3" />
+                            </svg>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">Win Rate</span>
+                            <span class="metric-value" id="winRate">--</span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon trades-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+                            </svg>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">Total Trades</span>
+                            <span class="metric-value" id="totalTrades">--</span>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon pf-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="7" width="20" height="14" rx="2" />
+                                <path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16" />
+                            </svg>
+                        </div>
+                        <div class="metric-content">
+                            <span class="metric-label">Profit Factor</span>
+                            <span class="metric-value" id="profitFactor">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="charts-grid">
+                    <div class="chart-card large">
+                        <div class="chart-header">
+                            <h3>Equity Curve</h3>
+                            <div class="chart-legend">
+                                <span class="legend-item equity">Portfolio Value</span>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="equityChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <h3>Drawdown</h3>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="drawdownChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trade History -->
+                <div class="trades-card">
+                    <div class="trades-header">
+                        <h3>Trade History</h3>
+                        <span class="trades-count" id="tradesCount">0 trades</span>
+                    </div>
+                    <div class="trades-table-wrapper">
+                        <table class="trades-table">
+                            <thead>
+                                <tr>
+                                    <th>Entry Date</th>
+                                    <th>Entry Price</th>
+                                    <th>Exit Date</th>
+                                    <th>Exit Price</th>
+                                    <th>Side</th>
+                                    <th>P&L</th>
+                                    <th>Return</th>
+                                    <th>Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tradesTableBody">
+                                <tr class="empty-row">
+                                    <td colspan="8">Run a backtest to see trades</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
