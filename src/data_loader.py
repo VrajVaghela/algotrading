@@ -74,31 +74,58 @@ class DataLoader:
     def _standardize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Standardize column names to: date, open, high, low, close, volume.
-        Handles various common naming conventions.
+        Handles various common naming conventions and cleaning.
         """
+        # Clean up column names first
+        df.columns = df.columns.str.strip().str.lower()
+        
+        # specific fix for "=""date""" styling from common Indian broker exports
+        for col in df.columns:
+            if df[col].dtype == object:
+                # Remove "=""...""" pattern
+                df[col] = df[col].astype(str).str.replace(r'[="]', '', regex=True)
+        
+        # Handle separate Date and Time columns
+        if 'date' in df.columns and 'time' in df.columns:
+            try:
+                # Combine date and time
+                df['date'] = pd.to_datetime(df['date'] + ' ' + df['time'])
+                df = df.drop(columns=['time'])
+            except Exception as e:
+                print(f"Error combining date and time: {e}")
+
         # Common column name mappings
         column_mappings = {
-            'Date': 'date', 'DATE': 'date', 'Datetime': 'date', 'datetime': 'date',
-            'Time': 'date', 'time': 'date', 'Timestamp': 'date', 'timestamp': 'date',
-            'Open': 'open', 'OPEN': 'open', 'open_price': 'open', 'o': 'open',
-            'High': 'high', 'HIGH': 'high', 'high_price': 'high', 'h': 'high',
-            'Low': 'low', 'LOW': 'low', 'low_price': 'low', 'l': 'low',
-            'Close': 'close', 'CLOSE': 'close', 'close_price': 'close', 
-            'Adj Close': 'close', 'Adj_Close': 'close', 'c': 'close',
-            'Volume': 'volume', 'VOLUME': 'volume', 'vol': 'volume', 'v': 'volume',
-            'Symbol': 'symbol', 'SYMBOL': 'symbol', 'ticker': 'symbol',
+            'datetime': 'date', 'timestamp': 'date',
+            'open_price': 'open', 'o': 'open',
+            'high_price': 'high', 'h': 'high',
+            'low_price': 'low', 'l': 'low',
+            'close_price': 'close', 'adj close': 'close', 'adj_close': 'close', 'c': 'close',
+            'vol': 'volume', 'v': 'volume',
+            'ticker': 'symbol'
         }
         
-        # Rename columns
-        df = df.rename(columns=column_mappings)
+        # Rename columns (only if target doesn't exist to avoid duplicates)
+        new_columns = {}
+        for col in df.columns:
+            if col in column_mappings:
+                target = column_mappings[col]
+                if target not in df.columns:
+                     new_columns[col] = target
         
-        # Ensure lowercase
-        df.columns = df.columns.str.lower()
+        df = df.rename(columns=new_columns)
         
-        # Parse date column if exists
-        if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'])
+        # Parse date column if exists and not already datetime
+        if 'date' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['date']):
+            try:
+                # Try explicit formats first for common Indian formats like DD-MM-YY
+                df['date'] = pd.to_datetime(df['date'], dayfirst=True, errors='coerce')
+            except:
+                df['date'] = pd.to_datetime(df['date'])
+            
             df = df.sort_values('date').reset_index(drop=True)
+            # Drop rows with invalid dates
+            df = df.dropna(subset=['date'])
         
         return df
     
