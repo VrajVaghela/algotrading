@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.api_server import run_server
-from src.data_loader import load_sample_data
+from src.data_loader import load_sample_data, DataLoader
 from src.strategy import MACrossoverRSIStrategy, get_strategy
 from src.backtest_engine import run_backtest
 from src.performance import calculate_metrics, PerformanceAnalyzer
@@ -26,39 +26,71 @@ def run_cli_backtest(args):
     # Load data
     print("[1/4] Loading market data...")
     df = load_sample_data()
+    
+    # Detect timeframe
+    loader = DataLoader()
+    timeframe = loader.detect_timeframe(df)
     print(f"      Loaded {len(df)} bars from {df['date'].min().date()} to {df['date'].max().date()}")
+    print(f"      Detected timeframe: {timeframe}")
     
-    # Create strategy
-    print(f"\n[2/4] Creating strategy: {args.strategy}")
-    print(f"\n[2/4] Creating strategy: {args.strategy}")
+    strategies_to_run = []
+    if args.strategy == 'all':
+        strategies_to_run = [
+            'high_sharpe', 'ma_crossover', 'rsi', 'ma_rsi', 
+            'bollinger', 'bollinger_rsi', 'macd', 'vwap', 'dynamic_regime'
+        ]
+    else:
+        strategies_to_run = [args.strategy]
+
+    results = []
+
+    print(f"\n[2/4] Running backtest(s) for: {', '.join(strategies_to_run)}")
     
-    # Filter args to pass relevant ones to strategy
-    # Convert args namespace to dict, strategy classes will ignore unused kwargs
-    strategy_params = vars(args)
-    
-    strategy = get_strategy(args.strategy, **strategy_params)
-    print(f"      Parameters: {strategy.get_params()}")
-    
-    # Run backtest
-    print(f"\n[3/4] Running backtest with ₹{args.capital:,.0f} capital...")
-    result = run_backtest(
-        df=df,
-        strategy=strategy,
-        initial_capital=args.capital,
-        commission=args.commission
-    )
-    
-    # Calculate metrics
-    print("\n[4/4] Calculating performance metrics...")
-    metrics = calculate_metrics(result)
-    
-    # Print results
-    print("\n" + "="*60)
-    print("  BACKTEST RESULTS")
-    print("="*60)
-    
-    print(f"""
+    for str_name in strategies_to_run:
+        print(f"\n  --- Strategy: {str_name} ---")
+        
+        # Filter args to pass relevant ones to strategy
+        strategy_params = vars(args)
+        strategy_params['data_timeframe'] = timeframe
+        
+        try:
+            strategy = get_strategy(str_name, **strategy_params)
+            # print(f"      Parameters: {strategy.get_params()}")
+            
+            # Run backtest
+            result = run_backtest(
+                df=df,
+                strategy=strategy,
+                initial_capital=args.capital,
+                commission=args.commission
+            )
+            
+            metrics = calculate_metrics(result)
+            results.append({
+                'name': str_name,
+                'result': result,
+                'metrics': metrics
+            })
+            print(f"      Total Return: {result.total_return_pct:+.2f}% | Sharpe: {metrics.sharpe_ratio:.2f}")
+
+        except Exception as e:
+            print(f"      FAILED: {e}")
+
+    # Print Report
+    if len(results) == 1:
+        # Detailed single report (original behavior)
+        r = results[0]
+        result = r['result']
+        metrics = r['metrics']
+        
+        print("\n" + "="*60)
+        print("  BACKTEST RESULTS")
+        print("="*60)
+        
+        print(f"""
 ╔════════════════════════════════════════════════════════════╗
+║  STRATEGY: {r['name'].upper():<40}║
+╠════════════════════════════════════════════════════════════╣
 ║  RETURNS                                                    ║
 ╠════════════════════════════════════════════════════════════╣
 ║  Initial Capital:    ₹{args.capital:>12,.2f}                    ║
@@ -81,8 +113,25 @@ def run_cli_backtest(args):
 ║  Avg Win:            ₹{metrics.avg_win:>11,.2f}                         ║
 ║  Avg Loss:           ₹{metrics.avg_loss:>11,.2f}                         ║
 ╚════════════════════════════════════════════════════════════╝
-    """)
-    
+        """)
+        
+    else:
+        # Comparison Table
+        print("\n" + "="*95)
+        print(f"  STRATEGY COMPARISON ({len(results)} strategies)")
+        print("="*95)
+        print(f"{'STRATEGY':<20} | {'RETURN %':<10} | {'SHARPE':<8} | {'MAX DD %':<10} | {'TRADES':<8} | {'WIN RATE %':<10}")
+        print("-" * 95)
+        
+        # Sort by Sharpe Ratio descending
+        results.sort(key=lambda x: x['metrics'].sharpe_ratio, reverse=True)
+        
+        for r in results:
+            m = r['metrics']
+            res = r['result']
+            print(f"{r['name']:<20} | {res.total_return_pct:>9.2f}% | {m.sharpe_ratio:>8.2f} | {m.max_drawdown_pct:>9.2f}% | {m.total_trades:>8} | {m.win_rate:>9.2f}%")
+        print("-" * 95)
+        
     print("\n  Run 'python main.py serve' to start the web dashboard\n")
 
 
@@ -98,8 +147,8 @@ def main():
     # Backtest command
     bt_parser = subparsers.add_parser('backtest', help='Run CLI backtest')
     bt_parser.add_argument('--strategy', default='ma_rsi', 
-                          choices=['ma_crossover', 'rsi', 'ma_rsi', 'bollinger', 'macd', 'vwap', 'bollinger_rsi'],
-                          help='Trading strategy')
+                          choices=['all', 'ma_crossover', 'rsi', 'ma_rsi', 'bollinger', 'macd', 'vwap', 'bollinger_rsi', 'high_sharpe', 'dynamic_regime'],
+                          help='Trading strategy (use "all" to run everyone)')
     bt_parser.add_argument('--capital', type=float, default=100000, 
                           help='Initial capital')
     bt_parser.add_argument('--fast-period', type=int, default=10, 
@@ -118,6 +167,10 @@ def main():
                           help='MACD Signal period')
     bt_parser.add_argument('--std-dev', type=float, default=2.0,
                           help='Bollinger std dev')
+    bt_parser.add_argument('--adx-period', type=int, default=14,
+                          help='ADX period for Dynamic Regime')
+    bt_parser.add_argument('--adx-threshold', type=int, default=25,
+                          help='ADX threshold for regime switch')
     
     args = parser.parse_args()
     

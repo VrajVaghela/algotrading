@@ -6,6 +6,7 @@ Flask REST API for backtesting service and frontend.
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import os
+import pandas as pd
 from pathlib import Path
 import traceback
 
@@ -22,6 +23,7 @@ CORS(app)
 # Global data cache
 _data_cache = None
 _uploaded_file_path = None
+_last_backtest_result = None
 
 
 def get_data():
@@ -166,6 +168,8 @@ def api_run_backtest():
         initial_capital: Starting capital (default: 100000)
         commission: Commission rate (default: 0.001)
     """
+    global _last_backtest_result
+    
     try:
         # Get parameters
         if request.method == 'POST':
@@ -179,11 +183,21 @@ def api_run_backtest():
         rsi_period = int(params.get('rsi_period', 14))
         rsi_oversold = int(params.get('rsi_oversold', 30))
         rsi_overbought = int(params.get('rsi_overbought', 70))
+        adx_period = int(params.get('adx_period', 14))
+        adx_threshold = int(params.get('adx_threshold', 25))
+        signal_period = int(params.get('signal_period', 9))
+        std_dev = float(params.get('std_dev', 2.0))
         initial_capital = float(params.get('initial_capital', 100000))
         commission = float(params.get('commission', 0.001))
         
+        
         # Load data
         df = get_data()
+        
+        # Detect timeframe
+        loader = DataLoader()
+        timeframe = loader.detect_timeframe(df)
+        print(f"Detected timeframe for API request: {timeframe}")
         
         # Create strategy
         if strategy_name == 'ma_rsi':
@@ -192,15 +206,25 @@ def api_run_backtest():
                 slow_period=slow_period,
                 rsi_period=rsi_period,
                 rsi_oversold=rsi_oversold,
-                rsi_overbought=rsi_overbought
+                rsi_overbought=rsi_overbought,
+                data_timeframe=timeframe
             )
         else:
             strategy_params = {
                 'fast_period': fast_period,
                 'slow_period': slow_period,
-                'period': rsi_period,
+                'rsi_period': rsi_period,
                 'oversold': rsi_oversold,
-                'overbought': rsi_overbought
+                'overbought': rsi_overbought,
+                'adx_period': adx_period,
+                'adx_threshold': adx_threshold,
+                # Aliases for specific strategies
+                'fast': fast_period,    # For MACD
+                'slow': slow_period,    # For MACD
+                'signal': signal_period,# For MACD
+                'period': fast_period,  # For Bollinger
+                'std_dev': std_dev,     # For Bollinger
+                'data_timeframe': timeframe
             }
             strategy = get_strategy(strategy_name, **strategy_params)
         
@@ -215,14 +239,28 @@ def api_run_backtest():
         # Calculate metrics
         metrics = calculate_metrics(result)
         
+        # Helper to clean NaNs
+        def clean_nans(data):
+            if isinstance(data, list):
+                return [None if (isinstance(x, float) and pd.isna(x)) else x for x in data]
+            return data
+
         # Get equity curve data
         equity_data = result.equity_curve[['date', 'equity']].copy()
         equity_data['date'] = equity_data['date'].astype(str)
+        # Clean equity values
+        equity_records = equity_data.to_dict('records')
+        for record in equity_records:
+            if pd.isna(record['equity']): record['equity'] = None
         
         # Get drawdown data
         analyzer = PerformanceAnalyzer()
         drawdown_data = analyzer.get_drawdown_series(result.equity_curve)
         drawdown_data['date'] = drawdown_data['date'].astype(str)
+        # Clean drawdown values
+        drawdown_records = drawdown_data.to_dict('records')
+        for record in drawdown_records:
+             if pd.isna(record['drawdown_pct']): record['drawdown_pct'] = None
         
         # Get trades data
         trades_data = [
@@ -241,31 +279,64 @@ def api_run_backtest():
         
         # Get signals with price for chart
         signals_df = result.signals_df[['date', 'close', 'signal']].copy()
-        signals_df['date'] = signals_df['date'].astype(str)
+        # signals_df['date'] = signals_df['date'].astype(str) # Remove string conversion
+        
+        # Convert date to timestamp for signals
+        signals_df['date'] = signals_df['date'].apply(lambda x: x.timestamp())
+        
         buy_signals = signals_df[signals_df['signal'] == 1][['date', 'close']].to_dict('records')
         sell_signals = signals_df[signals_df['signal'] == -1][['date', 'close']].to_dict('records')
         
-        return jsonify({
+        # Get indicators for chart
+        indicators = {}
+        target_columns = ['fast_ma', 'slow_ma', 'rsi', 'bb_upper', 'bb_middle', 'bb_lower', 'vwap', 'adx']
+        
+        # Replace NaN with None for JSON compatibility
+        signals_df_chart = result.signals_df.where(pd.notnull(result.signals_df), None)
+        
+        for col in target_columns:
+            if col in signals_df_chart.columns:
+                indicators[col] = clean_nans(signals_df_chart[col].tolist())
+        
+        response_data = {
             'success': True,
             'strategy': {
                 'name': result.strategy_name,
                 'params': result.strategy_params
             },
             'metrics': metrics_to_dict(metrics),
-            'equity_curve': equity_data.to_dict('records'),
-            'drawdown': drawdown_data.to_dict('records'),
+            'equity_curve': equity_records,
+            'drawdown': drawdown_records,
             'trades': trades_data,
             'signals': {
                 'buy': buy_signals,
                 'sell': sell_signals
             },
+            'indicators': indicators,
+            'price_data': clean_nans(result.signals_df['close'].tolist()),
+            'ohlc': [
+                {
+                    'time': row['date'].timestamp(), # Unix timestamp (float)
+                    'open': row['open'],
+                    'high': row['high'],
+                    'low': row['low'],
+                    'close': row['close']
+                }
+                for _, row in result.signals_df.iterrows()
+            ],
+            'dates': [d.timestamp() for d in result.signals_df['date']], # Send timestamps for indicators too
             'summary': {
                 'initial_capital': initial_capital,
                 'final_value': round(result.final_value, 2),
                 'total_return': round(result.total_return, 2),
                 'total_return_pct': round(result.total_return_pct, 2)
             }
-        })
+        }
+        
+        # Cache full result for chart page
+        _last_backtest_result = response_data
+        
+        return jsonify(response_data)
         
     except Exception as e:
         traceback.print_exc()
@@ -298,6 +369,11 @@ def api_get_strategies():
             'id': 'bollinger',
             'name': 'Bollinger Bands',
             'description': 'Mean reversion strategy using Bollinger Bands.'
+        },
+        {
+            'id': 'dynamic_regime',
+            'name': 'Dynamic Regime (ADX)',
+            'description': 'Switches between Trend (MACD) and Range (RSI) using ADX.'
         }
     ]
     return jsonify({'strategies': strategies})
@@ -315,6 +391,17 @@ def api_data_info():
         'columns': list(df.columns),
         'has_volume': 'volume' in df.columns
     })
+
+
+@app.route('/api/chart-data')
+def api_chart_data():
+    """Get data for the detailed chart."""
+    global _last_backtest_result
+    
+    if _last_backtest_result is None:
+        return jsonify({'success': False, 'error': 'No backtest run yet'}), 404
+        
+    return jsonify(_last_backtest_result)
 
 
 def run_server(host: str = '0.0.0.0', port: int = 5000, debug: bool = True):

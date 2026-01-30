@@ -209,6 +209,117 @@ class TechnicalIndicators:
         d = k.rolling(window=d_period).mean()
         
         return k, d
+    
+    @staticmethod
+    def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+        """
+        Average Directional Index.
+        
+        Args:
+            high: High prices
+            low: Low prices
+            close: Close prices
+            period: ADX period (default 14)
+            
+        Returns:
+            ADX values (0-100)
+        """
+        # Calculate True Range
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        # Calculate Directional Movement
+        up_move = high - high.shift(1)
+        down_move = low.shift(1) - low
+        
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+        
+        plus_dm = pd.Series(plus_dm, index=high.index)
+        minus_dm = pd.Series(minus_dm, index=high.index)
+        
+        # Calculate smoothed TR and DM using Wilder's Smoothing (alpha = 1/period)
+        # We can implement Wilder's smoothing using EWM with alpha=1/period, adjust=False
+        alpha = 1 / period
+        
+        tr_smooth = tr.ewm(alpha=alpha, adjust=False).mean()
+        plus_dm_smooth = plus_dm.ewm(alpha=alpha, adjust=False).mean()
+        minus_dm_smooth = minus_dm.ewm(alpha=alpha, adjust=False).mean()
+        
+        # Calculate DI
+        plus_di = 100 * (plus_dm_smooth / tr_smooth)
+        minus_di = 100 * (minus_dm_smooth / tr_smooth)
+        
+        # Calculate DX
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+        
+        # Calculate ADX (smoothed DX)
+        adx = dx.ewm(alpha=alpha, adjust=False).mean()
+        
+        return adx
+
+    @staticmethod
+    def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+        """
+        Average Directional Index (ADX).
+        
+        Measures the strength of a trend.
+        
+        Args:
+            high: High prices
+            low: Low prices
+            close: Close prices
+            period: ADX period (default 14)
+            
+        Returns:
+            ADX values
+        """
+        plus_dm = high.diff()
+        minus_dm = low.diff()
+        
+        plus_dm[plus_dm < 0] = 0
+        minus_dm[minus_dm > 0] = 0
+        
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        atr = tr.rolling(window=period).mean()
+        
+        plus_di = 100 * (plus_dm.ewm(alpha=1/period).mean() / atr)
+        minus_di = 100 * (abs(minus_dm).ewm(alpha=1/period).mean() / atr)
+        
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+        adx = dx.ewm(alpha=1/period).mean()
+        
+        return adx
+
+    @staticmethod
+    def hurst_exponent(series: pd.Series, max_lag: int = 20) -> float:
+        """
+        Calculate Hurst Exponent.
+        
+        H < 0.5: Mean reverting
+        H = 0.5: Random walk
+        H > 0.5: Trending
+        
+        Args:
+            series: Price series (log prices recommended)
+            max_lag: Maximum lag for R/S calculation
+            
+        Returns:
+            Hurst exponent (scalar)
+        """
+        lags = range(2, max_lag)
+        # Use .values to avoid pandas index alignment issues
+        tau = [np.sqrt(np.std(np.subtract(series[lag:].values, series[:-lag].values))) for lag in lags]
+        
+        # Polyfit to line
+        m = np.polyfit(np.log(lags), np.log(tau), 1)
+        return m[0] * 2.0
 
 
 def add_all_indicators(df: pd.DataFrame, 
@@ -241,6 +352,9 @@ def add_all_indicators(df: pd.DataFrame,
     df['macd'] = macd
     df['macd_signal'] = signal
     df['macd_hist'] = hist
+    
+    # Trend Strength
+    df['adx'] = ti.adx(df['high'], df['low'], df['close'])
     
     # Volatility
     upper, middle, lower = ti.bollinger_bands(df['close'])

@@ -47,14 +47,19 @@
                     <div class="form-section">
                         <h3>Data Source</h3>
                         <div class="form-group">
-                            <label for="csvUpload" class="file-upload-label">
-                                <span id="fileName">Select CSV File</span>
+                            <label for="csvUpload" class="file-upload-label" id="dropZone">
+                                <svg class="file-upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                <span class="file-upload-text" id="fileName">Select CSV File</span>
+                                <span class="file-upload-hint">or drag and drop here</span>
                                 <input type="file" id="csvUpload" accept=".csv" style="display: none;">
                             </label>
-                            <button type="button" class="btn-secondary" id="uploadBtn" disabled>
+                            <button type="button" class="btn-primary" id="uploadBtn" disabled style="margin-top: 1rem;">
                                 Upload Data
                             </button>
-                            <div id="uploadStatus" class="status-text">Using: Default Data</div>
+                            <div id="uploadStatus">Using: Default Data</div>
                         </div>
                     </div>
 
@@ -62,16 +67,21 @@
                     <div class="form-group">
                         <label for="strategy">Strategy</label>
                         <select id="strategy" name="strategy">
-                            <option value="ma_rsi">MA Crossover + RSI</option>
+                            <option value="high_sharpe">High-Sharpe Trend</option>
                             <option value="ma_crossover">MA Crossover</option>
+                            <option value="ma_rsi">MA Crossover + RSI</option>
                             <option value="rsi">RSI</option>
                             <option value="bollinger">Bollinger Bands</option>
+                            <option value="bollinger_rsi">Bollinger Bands + RSI</option>
+                            <option value="macd">MACD</option>
+                            <option value="vwap">VWAP</option>
+                            <option value="dynamic_regime">Dynamic Regime (ADX)</option>
                         </select>
                     </div>
 
                     <!-- Moving Average Settings -->
                     <div class="form-section">
-                        <h3>Moving Averages</h3>
+                        <h3>Moving Averages / MACD</h3>
                         <div class="form-grid">
                             <div class="form-group">
                                 <label for="fastPeriod">Fast Period</label>
@@ -80,6 +90,10 @@
                             <div class="form-group">
                                 <label for="slowPeriod">Slow Period</label>
                                 <input type="number" id="slowPeriod" name="slow_period" value="50" min="5" max="200">
+                            </div>
+                            <div class="form-group">
+                                <label for="signalPeriod">Signal Period (MACD)</label>
+                                <input type="number" id="signalPeriod" name="signal_period" value="9" min="2" max="50">
                             </div>
                         </div>
                     </div>
@@ -101,6 +115,31 @@
                                 <label for="rsiOverbought">Overbought</label>
                                 <input type="number" id="rsiOverbought" name="rsi_overbought" value="70" min="60"
                                     max="90">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bollinger Settings -->
+                    <div class="form-section">
+                        <h3>Bollinger Bands</h3>
+                        <div class="form-group">
+                            <label for="stdDev">Std Deviation</label>
+                            <input type="number" id="stdDev" name="std_dev" value="2.0" min="0.1" max="5.0" step="0.1">
+                        </div>
+                    </div>
+
+                    <!-- ADX Settings -->
+                    <div class="form-section">
+                        <h3>ADX (Dynamic)</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="adxPeriod">Period</label>
+                                <input type="number" id="adxPeriod" name="adx_period" value="14" min="5" max="50">
+                            </div>
+                            <div class="form-group">
+                                <label for="adxThreshold">Threshold</label>
+                                <input type="number" id="adxThreshold" name="adx_threshold" value="25" min="10"
+                                    max="50">
                             </div>
                         </div>
                     </div>
@@ -133,6 +172,18 @@
                 <div class="loading-overlay" id="loadingOverlay">
                     <div class="loader-ring"></div>
                     <p>Running backtest...</p>
+                </div>
+
+                <!-- Action Bar -->
+                <div class="action-bar" style="margin-bottom: 20px; display: flex; justify-content: flex-end;">
+                    <a href="chart.html" class="btn-secondary" id="viewGraphBtn"
+                        style="display: none; align-items: center; gap: 8px; text-decoration: none;">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 21h18M5 17l10 5 6-6" />
+                        </svg>
+                        View Detailed Graph
+                    </a>
                 </div>
 
                 <!-- Metrics Cards -->

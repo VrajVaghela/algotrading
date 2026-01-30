@@ -179,6 +179,60 @@ class DataLoader:
             df = df[df['date'] <= pd.to_datetime(end_date)]
         return df.reset_index(drop=True)
 
+    def detect_timeframe(self, df: pd.DataFrame) -> str:
+        """
+        Detect the likely timeframe of the data.
+        
+        Args:
+            df: DataFrame with 'date' column
+            
+        Returns:
+            String representing timeframe (e.g., '1m', '5m', '1h', '1d', '1w')
+        """
+        if 'date' not in df.columns or len(df) < 2:
+            return 'unknown'
+            
+        # Calculate time differences between consecutive rows
+        dates = pd.to_datetime(df['date'])
+        diffs = dates.diff().dropna()
+        
+        if len(diffs) == 0:
+            return 'unknown'
+            
+        # Get the most common time difference (median/mode)
+        # using median is safer for occasional gaps
+        median_diff = diffs.median()
+        
+        # Convert to seconds for easier comparison
+        seconds = median_diff.total_seconds()
+        
+        if seconds < 60:
+            return '1s'
+        elif 55 <= seconds <= 65:
+            return '1m'
+        elif 290 <= seconds <= 310:
+            return '5m'
+        elif 890 <= seconds <= 910:
+            return '15m'
+        elif 1790 <= seconds <= 1810: 
+            return '30m'
+        elif 3500 <= seconds <= 3700:
+            return '1h'
+        elif 14000 <= seconds <= 14800: # 4 hours
+            return '4h'
+        elif 80000 <= seconds <= 90000: # ~1 day (allowing for variation)
+            return '1d'
+        elif 600000 <= seconds <= 610000: # ~1 week
+            return '1w'
+        else:
+            # Fallback for other comparisons
+            if seconds < 3600:
+                return f"{int(seconds // 60)}m"
+            elif seconds < 86400:
+                return f"{int(seconds // 3600)}h"
+            else:
+                return f"{int(seconds // 86400)}d"
+
 
 def load_sample_data() -> pd.DataFrame:
     """
